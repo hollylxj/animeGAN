@@ -73,11 +73,10 @@ class _netD_1(nn.Module):
         main = nn.Sequential(
             # input is (nc) x 96 x 96
             nn.Conv2d(nc, ndf, 4, 2, 1, bias=False), # 5,3,1 for 96x96
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True)
             # state size. (ndf) x 32 x 32
-
+        )
         main.add_module('SN-1',SpectralNorm(nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)))
-
         main.add_module('relu-2',nn.LeakyReLU(0.2, inplace=True))
             # state size. (ndf*2) x 16 x 16
         main.add_module('SN-2',SpectralNorm(nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)))
