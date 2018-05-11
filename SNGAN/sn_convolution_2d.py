@@ -1,101 +1,100 @@
-import chainer
-import numpy as np
-from chainer import cuda
-from chainer.functions.array.broadcast import broadcast_to
-from chainer.functions.connection import convolution_2d
-from chainer.links.connection.convolution_2d import Convolution2D
-from max_sv import max_singular_value
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.modules import conv
+from torch.nn.modules.utils import _pair
+from .max_sv import max_singular_value
 
+class SNConv2d(conv._ConvNd):
 
-class SNConvolution2D(Convolution2D):
-    """Two-dimensional convolutional layer with spectral normalization.
-    This link wraps the :func:`~chainer.functions.convolution_2d` function and
-    holds the filter weight and bias vector as parameters.
+    r"""Applies a 2D convolution over an input signal composed of several input
+    planes.
+    In the simplest case, the output value of the layer with input size
+    :math:`(N, C_{in}, H, W)` and output :math:`(N, C_{out}, H_{out}, W_{out})`
+    can be precisely described as:
+    .. math::
+        \begin{array}{ll}
+        out(N_i, C_{out_j})  = bias(C_{out_j})
+                       + \sum_{{k}=0}^{C_{in}-1} weight(C_{out_j}, k)  \star input(N_i, k)
+        \end{array}
+    where :math:`\star` is the valid 2D `cross-correlation`_ operator,
+    :math:`N` is a batch size, :math:`C` denotes a number of channels,
+    :math:`H` is a height of input planes in pixels, and :math:`W` is
+    width in pixels.
+    | :attr:`stride` controls the stride for the cross-correlation, a single
+      number or a tuple.
+    | :attr:`padding` controls the amount of implicit zero-paddings on both
+    |  sides for :attr:`padding` number of points for each dimension.
+    | :attr:`dilation` controls the spacing between the kernel points; also
+      known as the à trous algorithm. It is harder to describe, but this `link`_
+      has a nice visualization of what :attr:`dilation` does.
+    | :attr:`groups` controls the connections between inputs and outputs.
+      `in_channels` and `out_channels` must both be divisible by `groups`.
+    |       At groups=1, all inputs are convolved to all outputs.
+    |       At groups=2, the operation becomes equivalent to having two conv
+                 layers side by side, each seeing half the input channels,
+                 and producing half the output channels, and both subsequently
+                 concatenated.
+            At groups=`in_channels`, each input channel is convolved with its
+                 own set of filters (of size `out_channels // in_channels`).
+    The parameters :attr:`kernel_size`, :attr:`stride`, :attr:`padding`, :attr:`dilation` can either be:
+        - a single ``int`` -- in which case the same value is used for the height and width dimension
+        - a ``tuple`` of two ints -- in which case, the first `int` is used for the height dimension,
+          and the second `int` for the width dimension
+    .. note::
+         Depending of the size of your kernel, several (of the last)
+         columns of the input might be lost, because it is a valid `cross-correlation`_,
+         and not a full `cross-correlation`_.
+         It is up to the user to add proper padding.
+    .. note::
+         The configuration when `groups == in_channels` and `out_channels = K * in_channels`
+         where `K` is a positive integer is termed in literature as depthwise convolution.
+         In other words, for an input of size :math:`(N, C_{in}, H_{in}, W_{in})`, if you want a
+         depthwise convolution with a depthwise multiplier `K`,
+         then you use the constructor arguments
+         :math:`(in\_channels=C_{in}, out\_channels=C_{in} * K, ..., groups=C_{in})`
     Args:
-        in_channels (int): Number of channels of input arrays. If ``None``,
-            parameter initialization will be deferred until the first forward
-            datasets pass at which time the size will be determined.
-        out_channels (int): Number of channels of output arrays.
-        ksize (int or pair of ints): Size of filters (a.k.a. kernels).
-            ``ksize=k`` and ``ksize=(k, k)`` are equivalent.
-        stride (int or pair of ints): Stride of filter applications.
-            ``stride=s`` and ``stride=(s, s)`` are equivalent.
-        pad (int or pair of ints): Spatial padding width for input arrays.
-            ``pad=p`` and ``pad=(p, p)`` are equivalent.
-        wscale (float): Scaling factor of the initial weight.
-        bias (float): Initial bias value.
-        nobias (bool): If ``True``, then this link does not use the bias term.
-        initialW (4-D array): Initial weight value. If ``None``, then this
-            function uses to initialize ``wscale``.
-            May also be a callable that takes ``numpy.ndarray`` or
-            ``cupy.ndarray`` and edits its value.
-        initial_bias (1-D array): Initial bias value. If ``None``, then this
-            function uses to initialize ``bias``.
-            May also be a callable that takes ``numpy.ndarray`` or
-            ``cupy.ndarray`` and edits its value.
-        use_gamma (bool): If true, apply scalar multiplication to the 
-            normalized weight (i.e. reparameterize).
-        Ip (int): The number of power iteration for calculating the spcetral 
-            norm of the weights.
-        factor (float) : constant factor to adjust spectral norm of W_bar.
-    .. seealso::
-       See :func:`chainer.functions.convolution_2d` for the definition of
-       two-dimensional convolution.
+        in_channels (int): Number of channels in the input image
+        out_channels (int): Number of channels produced by the convolution
+        kernel_size (int or tuple): Size of the convolving kernel
+        stride (int or tuple, optional): Stride of the convolution. Default: 1
+        padding (int or tuple, optional): Zero-padding added to both sides of the input. Default: 0
+        dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
+        groups (int, optional): Number of blocked connections from input channels to output channels. Default: 1
+        bias (bool, optional): If ``True``, adds a learnable bias to the output. Default: ``True``
+    Shape:
+        - Input: :math:`(N, C_{in}, H_{in}, W_{in})`
+        - Output: :math:`(N, C_{out}, H_{out}, W_{out})` where
+          :math:`H_{out} = floor((H_{in}  + 2 * padding[0] - dilation[0] * (kernel\_size[0] - 1) - 1) / stride[0] + 1)`
+          :math:`W_{out} = floor((W_{in}  + 2 * padding[1] - dilation[1] * (kernel\_size[1] - 1) - 1) / stride[1] + 1)`
     Attributes:
-        W (~chainer.Variable): Weight parameter.
-        W_bar (~chainer.Variable): Spectrally normalized weight parameter.
-        b (~chainer.Variable): Bias parameter.
-        u (~numpy.array): Current estimation of the right largest singular vector of W.
-        (optional) gamma (~chainer.Variable): the multiplier parameter.
-        (optional) factor (float): constant factor to adjust spectral norm of W_bar.
+        weight (Tensor): the learnable weights of the module of shape
+                         (out_channels, in_channels, kernel_size[0], kernel_size[1])
+        bias (Tensor):   the learnable bias of the module of shape (out_channels)
+        W(Tensor): Spectrally normalized weight
+        u (Tensor): the right largest singular value of W.
+    .. _cross-correlation:
+        https://en.wikipedia.org/wiki/Cross-correlation
+    .. _link:
+        https://github.com/vdumoulin/conv_arithmetic/blob/master/README.md
     """
-
-    def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 nobias=False, initialW=None, initial_bias=None, use_gamma=False, Ip=1, factor=None):
-        self.Ip = Ip
-        self.use_gamma = use_gamma
-        self.factor = factor
-        super(SNConvolution2D, self).__init__(
-            in_channels, out_channels, ksize, stride, pad,
-            nobias, initialW, initial_bias)
-        self.u = np.random.normal(size=(1, out_channels)).astype(dtype="f")
-        self.register_persistent('u')
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        kernel_size = _pair(kernel_size)
+        stride = _pair(stride)
+        padding = _pair(padding)
+        dilation = _pair(dilation)
+        super(SNConv2d, self).__init__(
+            in_channels, out_channels, kernel_size, stride, padding, dilation,
+            False, _pair(0), groups, bias)
+        self.register_buffer('u', torch.Tensor(1, out_channels).normal_())
 
     @property
-    def W_bar(self):
-        """
-        Spectrally Normalized Weight
-        """
-        W_mat = self.W.reshape(self.W.shape[0], -1)
-        sigma, _u, _ = max_singular_value(W_mat, self.u, self.Ip)
-        if self.factor:
-            sigma = sigma / self.factor
-        sigma = broadcast_to(sigma.reshape((1, 1, 1, 1)), self.W.shape)
-        if chainer.config.train:
-            # Update estimated 1st singular vector
-            self.u[:] = _u
-        if hasattr(self, 'gamma'):
-            return broadcast_to(self.gamma, self.W.shape) * self.W / sigma
-        else:
-            return self.W / sigma
+    def W_(self):
+        w_mat = self.weight.view(self.weight.size(0), -1)
+        sigma, _u = max_singular_value(w_mat, self.u)
+        self.u.copy_(_u)
+        return self.weight / sigma
 
-    def _initialize_params(self, in_size):
-        super(SNConvolution2D, self)._initialize_params(in_size)
-        if self.use_gamma:
-            W_mat = self.W.data.reshape(self.W.shape[0], -1)
-            _, s, _ = np.linalg.svd(W_mat)
-            with self.init_scope():
-                self.gamma = chainer.Parameter(s[0], (1, 1, 1, 1))
-
-    def __call__(self, x):
-        """Applies the convolution layer.
-        Args:
-            x (~chainer.Variable): Input image.
-        Returns:
-            ~chainer.Variable: Output of the convolution.
-        """
-        if self.W.data is None:
-            self._initialize_params(x.shape[1])
-        return convolution_2d.convolution_2d(
-            x, self.W_bar, self.b, self.stride, self.pad)
-
+    def forward(self, input):
+        return F.conv2d(input, self.W_, self.bias, self.stride,
+                        self.padding, self.dilation, self.groups)

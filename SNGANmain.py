@@ -48,7 +48,7 @@ parser.add_argument('--binary', action='store_true', help='z from bernoulli dist
 
 # simply prefer this way
 arg_list = [
-     '--dataRoot', 'data/anime-faces',
+     '--dataRoot', 'anime-faces',
      '--workers', '12',
      '--batchSize', '128',
      '--imageSize', '64',
@@ -73,7 +73,8 @@ arg_list = [
 args = parser.parse_args()
 opt = parser.parse_args(arg_list)
 print(opt)
-opt.cuda = False
+opt.cuda = True
+
 try:
     os.makedirs(opt.outDir)
 except OSError:
@@ -110,8 +111,8 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
 
 # load models 
 if opt.model == 1:
-    netG = models._netG_1(ngpu, nz, nc, ngf, n_extra_g)
-    netD = models._netD_1(ngpu, nz, nc, ndf, n_extra_d)
+    netG = SNmodels._netG_1(ngpu, nz, nc, ngf, n_extra_g)
+    netD = SNmodels._netD_1(ngpu, nz, nc, ndf, n_extra_d)
 elif opt.model == 2:
     netG = models._netG_2(ngpu, nz, nc, ngf)
     netD = models._netD_2(ngpu, nz, nc, ndf)
@@ -198,7 +199,8 @@ for epoch in range(opt.niter):
         label.data.fill_(real_label) # fake labels are real for generator cost
         output = netD(fake)
         errG = criterion(output, label)
-        errG.backward(retain_variables=True) # True if backward through the graph for the second time
+        #errG.backward(retain_variables=True) # True if backward through the graph for the second time
+        errG.backward(retain_graph=True)
         if opt.model == 2: # with z predictor
             errG_z = criterion_MSE(z_prediction, noise)
             errG_z.backward()

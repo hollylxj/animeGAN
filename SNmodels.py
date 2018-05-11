@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import SNGAN.spectral_normalization
-
+#import SNGAN.spectral_normalization as SpectralNorm
+from SNGAN.sn_convolution_2d import SNConv2d
 
 
 def weights_init(m):
@@ -24,7 +24,7 @@ class _netG_1(nn.Module):
         main = nn.Sequential(
             # input is Z, going into a convolution
             # state size. nz x 1 x 1
-            nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ngf*8) x 4 x 4
@@ -44,16 +44,16 @@ class _netG_1(nn.Module):
 
         # Extra layers
         for t in range(n_extra_layers_g):
-            main.add_module('extra-layers-{0}.{1}.conv'.format(t, ngf),
+            main.add_module('extra-layers-{0}-{1}-conv'.format(t, ngf),
                             nn.Conv2d(ngf, ngf, 3, 1, 1, bias=False))
-            main.add_module('extra-layers-{0}.{1}.batchnorm'.format(t, ngf),
+            main.add_module('extra-layers-{0}-{1}-batchnorm'.format(t, ngf),
                             nn.BatchNorm2d(ngf))
-            main.add_module('extra-layers-{0}.{1}.relu'.format(t, ngf),
+            main.add_module('extra-layers-{0}-{1}-relu'.format(t, ngf),
                             nn.LeakyReLU(0.2, inplace=True))
 
-        main.add_module('final_layer.deconv', 
+        main.add_module('final_layer-deconv', 
         	             nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False)) # 5,3,1 for 96x96
-        main.add_module('final_layer.tanh', 
+        main.add_module('final_layer-tanh', 
         	             nn.Tanh())
             # state size. (nc) x 96 x 96
 
@@ -66,39 +66,42 @@ class _netG_1(nn.Module):
             gpu_ids = range(self.ngpu)
         return nn.parallel.data_parallel(self.main, input, gpu_ids), 0
 
+
 class _netD_1(nn.Module):
-    def __init__(self):
+    def __init__(self, ngpu, nz, nc, ndf,  n_extra_layers_d):
         super(_netD_1, self).__init__()
         self.ngpu = ngpu
         main = nn.Sequential(
             # input is (nc) x 96 x 96
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False), # 5,3,1 for 96x96
-            nn.LeakyReLU(0.2, inplace=True)
+            SNConv2d(nc, ndf, 4, 2, 1, bias=False), # 5,3,1 for 96x96
+            nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf) x 32 x 32
-        )
-        main.add_module('SN-1',SpectralNorm(nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)))
-        main.add_module('relu-2',nn.LeakyReLU(0.2, inplace=True))
+            SNConv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*2) x 16 x 16
-        main.add_module('SN-2',SpectralNorm(nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)))
-        main.add_module('relu-3',nn.LeakyReLU(0.2, inplace=True))
+            SNConv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*4) x 8 x 8
-        main.add_module('SN-2',SpectralNorm(nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False)))
-        main.add_module('relu-3',nn.LeakyReLU(0.2, inplace=True))
-
+            SNConv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*8) x 4 x 4
+        )
 
         # Extra layers
         for t in range(n_extra_layers_d):
-#             main.add_module('extra-layers-{0}.{1}.conv'.format(t, ndf * 8),
-#                             nn.Conv2d(ndf * 8, ndf * 8, 3, 1, 1, bias=False))
-#             main.add_module('extra-layers-{0}.{1}.batchnorm'.format(t, ndf * 8),
+            main.add_module('extra-layers-{0}-{1}-conv'.format(t, ndf * 8),
+                            SNConv2d(ndf * 8, ndf * 8, 3, 1, 1, bias=False))
+#             main.add_module('extra-layers-{0}-{1}-batchnorm'.format(t, ndf * 8),
 #                             nn.BatchNorm2d(ndf * 8))
-            main.add_module('extra-layers-{0}.{1}.conv'.format(t, ndf * 8),SpectralNorm(nn.Conv2d(ndf * 8, ndf * 8, 3, 1, 1, bias=False)))
-            main.add_module('extra-layers-{0}.{1}.relu'.format(t, ndf * 8),
+            main.add_module('extra-layers-{0}-{1}-relu'.format(t, ndf * 8),
                             nn.LeakyReLU(0.2, inplace=True))
 
 
-        main.add_module('final_layers.conv', nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False))
-        main.add_module('final_layers.sigmoid', nn.Sigmoid())
+        main.add_module('final_layers-conv', nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False))
+        main.add_module('final_layers-sigmoid', nn.Sigmoid())
         # state size. 1 x 1 x 1
         self.main = main
 
@@ -108,52 +111,6 @@ class _netD_1(nn.Module):
             gpu_ids = range(self.ngpu)
         output = nn.parallel.data_parallel(self.main, input, gpu_ids)
         return output.view(-1, 1)
-    
-
-# class _netD_1(nn.Module):
-#     def __init__(self, ngpu, nz, nc, ndf,  n_extra_layers_d):
-#         super(_netD_1, self).__init__()
-#         self.ngpu = ngpu
-#         main = nn.Sequential(
-#             # input is (nc) x 96 x 96
-#             nn.Conv2d(nc, ndf, 4, 2, 1, bias=False), # 5,3,1 for 96x96
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf) x 32 x 32
-#             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 2),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf*2) x 16 x 16
-#             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 4),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf*4) x 8 x 8
-#             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 8),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf*8) x 4 x 4
-#         )
-
-#         # Extra layers
-#         for t in range(n_extra_layers_d):
-#             main.add_module('extra-layers-{0}.{1}.conv'.format(t, ndf * 8),
-#                             nn.Conv2d(ndf * 8, ndf * 8, 3, 1, 1, bias=False))
-#             main.add_module('extra-layers-{0}.{1}.batchnorm'.format(t, ndf * 8),
-#                             nn.BatchNorm2d(ndf * 8))
-#             main.add_module('extra-layers-{0}.{1}.relu'.format(t, ndf * 8),
-#                             nn.LeakyReLU(0.2, inplace=True))
-
-
-#         main.add_module('final_layers.conv', nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False))
-#         main.add_module('final_layers.sigmoid', nn.Sigmoid())
-#         # state size. 1 x 1 x 1
-#         self.main = main
-
-#     def forward(self, input):
-#         gpu_ids = None
-#         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-#             gpu_ids = range(self.ngpu)
-#         output = nn.parallel.data_parallel(self.main, input, gpu_ids)
-#         return output.view(-1, 1)
 
 
 
