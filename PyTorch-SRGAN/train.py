@@ -153,11 +153,14 @@ for epoch in range(2):
 #                 imsave('%s/fake_samples_epoch_%03d_%03d.png' % (opt.out, epoch, ind), A)
             vutils.save_image(high_res_fake.cpu().data,
                     '%s/fake_samples_epoch_%03d.jpg' % (opt.out, epoch))
+            vutils.save_image(low_res.cpu().data,
+                    '%s/low_res_samples_epoch_%03d.jpg' % (opt.out, epoch))
+#             torch.save(generator.state_dict(), '%s/generator_pretrain.pth' % opt.out)
         
         
 
-    sys.stdout.write('\r[%d/%d][%d/%d] Generator_MSE_Loss: %.4f\n' % (epoch, 2, i, len(dataloader), mean_generator_content_loss/len(dataloader)))
-    log_value('generator_mse_loss', mean_generator_content_loss/len(dataloader), epoch)
+#     sys.stdout.write('\r[%d/%d][%d/%d] Generator_MSE_Loss: %.4f\n' % (epoch, 2, i, len(dataloader), mean_generator_content_loss/len(dataloader)))
+#     log_value('generator_mse_loss', mean_generator_content_loss/len(dataloader), epoch)
 
 # Do checkpointing
 torch.save(generator.state_dict(), '%s/generator_pretrain.pth' % opt.out)
@@ -227,25 +230,24 @@ for epoch in range(opt.nEpochs):
         #visualizer.show(low_res, high_res_real.cpu().data, high_res_fake.cpu().data)#######################
         if i % 100 == 0:
             # the first 64 samples from the mini-batch are saved.
-            vutils.save_image(low_res,
-                    '%s/low_res.png' % opt.out, nrow=8)
-            fake = generator(low_res)
-            vutils.save_image(fake,
-                    '%s/fake_samples_epoch_%03d.png' % (opt.out, epoch), nrow=8)
+            vutils.save_image(high_res_fake.cpu().data,
+                    '%s/fake_samples_epoch_%03d.jpg' % (opt.out, epoch))
+            vutils.save_image(low_res.cpu().data,
+                    '%s/low_res_samples_epoch_%03d.jpg' % (opt.out, epoch))
         
-    sys.stdout.write('\r[%d/%d][%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f\n' % (epoch, opt.nEpochs, i, len(dataloader),
-    mean_discriminator_loss/len(dataloader), mean_generator_content_loss/len(dataloader), 
-    mean_generator_adversarial_loss/len(dataloader), mean_generator_total_loss/len(dataloader)))
+#     sys.stdout.write('\r[%d/%d][%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f\n' % (epoch, opt.nEpochs, i, len(dataloader),
+#     mean_discriminator_loss/len(dataloader), mean_generator_content_loss/len(dataloader), 
+#     mean_generator_adversarial_loss/len(dataloader), mean_generator_total_loss/len(dataloader)))
 
-    log_value('generator_content_loss', mean_generator_content_loss/len(dataloader), epoch)
-    log_value('generator_adversarial_loss', mean_generator_adversarial_loss/len(dataloader), epoch)
-    log_value('generator_total_loss', mean_generator_total_loss/len(dataloader), epoch)
-    log_value('discriminator_loss', mean_discriminator_loss/len(dataloader), epoch)
+#     log_value('generator_content_loss', mean_generator_content_loss/len(dataloader), epoch)
+#     log_value('generator_adversarial_loss', mean_generator_adversarial_loss/len(dataloader), epoch)
+#     log_value('generator_total_loss', mean_generator_total_loss/len(dataloader), epoch)
+#     log_value('discriminator_loss', mean_discriminator_loss/len(dataloader), epoch)
 
     # Do checkpointing
     torch.save(generator.state_dict(), '%s/generator_final.pth' % opt.out)
     torch.save(discriminator.state_dict(), '%s/discriminator_final.pth' % opt.out)
 
 # Avoid closing
-while True:
-    pass
+# while True:
+#     pass
