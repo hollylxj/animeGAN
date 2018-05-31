@@ -16,11 +16,11 @@ from torchvision.utils import save_image
 from models import Generator, Discriminator, FeatureExtractor
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default='cifar100', help='cifar10 | cifar100 | folder')
-parser.add_argument('--dataroot', type=str, default='./data', help='path to dataset')
+parser.add_argument('--dataset', type=str, default='folder', help='cifar10 | cifar100 | folder')
+parser.add_argument('--dataroot', type=str, default='output', help='path to dataset')
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
-parser.add_argument('--imageSize', type=int, default=15, help='the low resolution image size')
+parser.add_argument('--imageSize', type=int, default=32, help='the low resolution image size')
 parser.add_argument('--upSampling', type=int, default=2, help='low to high resolution scaling factor')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--nGPU', type=int, default=1, help='number of GPUs to use')
@@ -28,6 +28,7 @@ parser.add_argument('--generatorWeights', type=str, default='checkpoints/generat
 parser.add_argument('--discriminatorWeights', type=str, default='checkpoints/discriminator_final.pth', help="path to discriminator weights (to continue training)")
 
 opt = parser.parse_args()
+
 print(opt)
 
 try:
@@ -72,16 +73,16 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
 generator = Generator(16, opt.upSampling)
 if opt.generatorWeights != '':
     generator.load_state_dict(torch.load(opt.generatorWeights))
-print generator
+print(generator)
 
 discriminator = Discriminator()
 if opt.discriminatorWeights != '':
     discriminator.load_state_dict(torch.load(opt.discriminatorWeights))
-print discriminator
+print(discriminator)
 
 # For the content loss
 feature_extractor = FeatureExtractor(torchvision.models.vgg19(pretrained=True))
-print feature_extractor
+print(feature_extractor)
 content_criterion = nn.MSELoss()
 adversarial_criterion = nn.BCELoss()
 
@@ -100,7 +101,7 @@ if opt.cuda:
 
 low_res = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 
-print 'Test started...'
+print('Test started...')
 mean_generator_content_loss = 0.0
 mean_generator_adversarial_loss = 0.0
 mean_generator_total_loss = 0.0
