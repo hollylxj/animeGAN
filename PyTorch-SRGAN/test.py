@@ -17,14 +17,14 @@ from models import Generator, Discriminator, FeatureExtractor
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='folder', help='cifar10 | cifar100 | folder')
-parser.add_argument('--dataroot', type=str, default='output', help='path to dataset')
+parser.add_argument('--dataroot', type=str, default='SNGan_out', help='path to dataset') #SNGan_out
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=32, help='the low resolution image size')
 parser.add_argument('--upSampling', type=int, default=2, help='low to high resolution scaling factor')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--nGPU', type=int, default=1, help='number of GPUs to use')
-parser.add_argument('--generatorWeights', type=str, default='checkpoints/generator_final.pth', help="path to generator weights (to continue training)")
+parser.add_argument('--generatorWeights', type=str, default='checkpoints/generator_pretrain.pth', help="path to generator weights (to continue training)")
 parser.add_argument('--discriminatorWeights', type=str, default='checkpoints/discriminator_final.pth', help="path to discriminator weights (to continue training)")
 
 opt = parser.parse_args()
@@ -42,7 +42,7 @@ except OSError:
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-transform = transforms.Compose([transforms.RandomCrop(opt.imageSize*opt.upSampling),
+transform = transforms.Compose([#transforms.RandomCrop(opt.imageSize*opt.upSampling),
                                 transforms.ToTensor()])
 
 normalize = transforms.Normalize(mean = [0.485, 0.456, 0.406],
@@ -58,17 +58,10 @@ scale = transforms.Compose([transforms.ToPILImage(),
 # Equivalent to un-normalizing ImageNet (for correct visualization)
 unnormalize = transforms.Normalize(mean = [-2.118, -2.036, -1.804], std = [4.367, 4.464, 4.444])
 
-if opt.dataset == 'folder':
-    # folder dataset
-    dataset = datasets.ImageFolder(root=opt.dataroot, transform=transform)
-elif opt.dataset == 'cifar10':
-    dataset = datasets.CIFAR10(root=opt.dataroot, download=True, train=False, transform=transform)
-elif opt.dataset == 'cifar100':
-    dataset = datasets.CIFAR100(root=opt.dataroot, download=True, train=False, transform=transform)
-assert dataset
-
+dataset = datasets.ImageFolder(root=opt.dataroot, transform=transform)
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
-                                         shuffle=False, num_workers=int(opt.workers))
+                                         shuffle=True, num_workers=int(opt.workers))
+
 
 generator = Generator(16, opt.upSampling)
 if opt.generatorWeights != '':
@@ -114,6 +107,10 @@ discriminator.eval()
 for i, data in enumerate(dataloader):
     # Generate data
     high_res_real, _ = data
+    if len(high_res_real) < opt.batchSize:
+            print("high_res_real data not enough")
+            print("data: ", len(high_res_real), "batch_size: ", opt.batchSize)
+            break;
 
     # Downsample images to low resolution
     for j in range(opt.batchSize):
@@ -139,23 +136,23 @@ for i, data in enumerate(dataloader):
     real_features = Variable(feature_extractor(high_res_real).data)
     fake_features = feature_extractor(high_res_fake)
 
-    generator_content_loss = content_criterion(high_res_fake, high_res_real) + 0.006*content_criterion(fake_features, real_features)
-    mean_generator_content_loss += generator_content_loss.data[0]
-    generator_adversarial_loss = adversarial_criterion(discriminator(high_res_fake), target_real)
-    mean_generator_adversarial_loss += generator_adversarial_loss.data[0]
+#     generator_content_loss = content_criterion(high_res_fake, high_res_real) + 0.006*content_criterion(fake_features, real_features)
+#     mean_generator_content_loss += generator_content_loss.data[0]
+#     generator_adversarial_loss = adversarial_criterion(discriminator(high_res_fake), target_real)
+#     mean_generator_adversarial_loss += generator_adversarial_loss.data[0]
 
-    generator_total_loss = generator_content_loss + 1e-3*generator_adversarial_loss
-    mean_generator_total_loss += generator_total_loss.data[0]
+#     generator_total_loss = generator_content_loss + 1e-3*generator_adversarial_loss
+#     mean_generator_total_loss += generator_total_loss.data[0]
 
     ######### Status and display #########
-    sys.stdout.write('\r[%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f' % (i, len(dataloader),
-    discriminator_loss.data[0], generator_content_loss.data[0], generator_adversarial_loss.data[0], generator_total_loss.data[0]))
+#     sys.stdout.write('\r[%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f' % (i, len(dataloader),
+#     discriminator_loss.data[0], generator_content_loss.data[0], generator_adversarial_loss.data[0], generator_total_loss.data[0]))
 
     for j in range(opt.batchSize):
         save_image(unnormalize(high_res_real.data[j]), 'output/high_res_real/' + str(i*opt.batchSize + j) + '.png')
         save_image(unnormalize(high_res_fake.data[j]), 'output/high_res_fake/' + str(i*opt.batchSize + j) + '.png')
         save_image(unnormalize(low_res[j]), 'output/low_res/' + str(i*opt.batchSize + j) + '.png')
 
-sys.stdout.write('\r[%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f\n' % (i, len(dataloader),
-mean_discriminator_loss/len(dataloader), mean_generator_content_loss/len(dataloader), 
-mean_generator_adversarial_loss/len(dataloader), mean_generator_total_loss/len(dataloader)))
+# sys.stdout.write('\r[%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f\n' % (i, len(dataloader),
+# mean_discriminator_loss/len(dataloader), mean_generator_content_loss/len(dataloader), 
+# mean_generator_adversarial_loss/len(dataloader), mean_generator_total_loss/len(dataloader)))
