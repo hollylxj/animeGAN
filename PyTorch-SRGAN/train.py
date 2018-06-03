@@ -41,7 +41,7 @@ parser.add_argument('--out', type=str, default='checkpoints', help='folder to ou
 
 opt = parser.parse_args()
 print(opt)
-
+opt.cuda = True
 try:
     os.makedirs(opt.out)
 except OSError:
@@ -109,57 +109,57 @@ low_res = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 
 # Pre-train generator using raw MSE loss
 print('Generator pre-training')
-for epoch in range(2):
-    mean_generator_content_loss = 0.0
+# for epoch in range(2):
+#     mean_generator_content_loss = 0.0
 
-    for i, data in enumerate(dataloader):
-        # Generate data
-        high_res_real, _ = data
+#     for i, data in enumerate(dataloader):
+#         # Generate data
+#         high_res_real, _ = data
         
-        if len(high_res_real) < opt.batchSize:
-            print("high_res_real data not enough")
-            print("data: ", len(high_res_real), "batch_size: ", opt.batchSize)
-            break;
+#         if len(high_res_real) < opt.batchSize:
+#             print("high_res_real data not enough")
+#             print("data: ", len(high_res_real), "batch_size: ", opt.batchSize)
+#             break;
             
-        # Downsample images to low resolution
-        for j in range(opt.batchSize):
-            low_res[j] = scale(high_res_real[j])
-            high_res_real[j] = normalize(high_res_real[j])
+#         # Downsample images to low resolution
+#         for j in range(opt.batchSize):
+#             low_res[j] = scale(high_res_real[j])
+#             high_res_real[j] = normalize(high_res_real[j])
 
-        # Generate real and fake inputs
-        if opt.cuda:
-            high_res_real = Variable(high_res_real.cuda())
-            high_res_fake = generator(Variable(low_res).cuda())
-        else:
-            high_res_real = Variable(high_res_real)
-            high_res_fake = generator(Variable(low_res))
+#         # Generate real and fake inputs
+#         if opt.cuda:
+#             high_res_real = Variable(high_res_real.cuda())
+#             high_res_fake = generator(Variable(low_res).cuda())
+#         else:
+#             high_res_real = Variable(high_res_real)
+#             high_res_fake = generator(Variable(low_res))
 
-        ######### Train generator #########
-        generator.zero_grad()
+#         ######### Train generator #########
+#         generator.zero_grad()
 
-        generator_content_loss = content_criterion(high_res_fake, high_res_real)
-        mean_generator_content_loss += generator_content_loss.data[0]
+#         generator_content_loss = content_criterion(high_res_fake, high_res_real)
+#         mean_generator_content_loss += generator_content_loss.data[0]
 
-        generator_content_loss.backward()
-        optim_generator.step()
+#         generator_content_loss.backward()
+#         optim_generator.step()
 
-        ######### Status and display #########
-        sys.stdout.write('\r[%d/%d][%d/%d] Generator_MSE_Loss: %.4f' % (epoch, 2, i, len(dataloader), generator_content_loss.data[0]))
-        if i % 100 == 0:
+#         ######### Status and display #########
+#         sys.stdout.write('\r[%d/%d][%d/%d] Generator_MSE_Loss: %.4f' % (epoch, 2, i, len(dataloader), generator_content_loss.data[0]))
+#         if i % 100 == 0:
 
-            vutils.save_image(high_res_fake.cpu().data,
-                    '%s/fake_samples_epoch_%03d.jpg' % (opt.out, epoch))
-            vutils.save_image(low_res.cpu().data,
-                    '%s/low_res_samples_epoch_%03d.jpg' % (opt.out, epoch))
+#             vutils.save_image(high_res_fake.cpu().data,
+#                     '%s/fake_samples_epoch_%03d.jpg' % (opt.out, epoch))
+#             vutils.save_image(low_res.cpu().data,
+#                     '%s/low_res_samples_epoch_%03d.jpg' % (opt.out, epoch))
 
         
         
 
-# Do checkpointing
-torch.save(generator.state_dict(), '%s/generator_pretrain.pth' % opt.out)
+# # Do checkpointing
+# torch.save(generator.state_dict(), '%s/generator_pretrain.pth' % opt.out)
 
 
-# generator.load_state_dict(torch.load('checkpoints/generator_pretrain.pth'))
+generator.load_state_dict(torch.load('checkpoints/generator_pretrain.pth'))
 # SRGAN training
 optim_generator = optim.Adam(generator.parameters(), lr=opt.generatorLR*0.1)
 optim_discriminator = optim.Adam(discriminator.parameters(), lr=opt.discriminatorLR*0.1)
@@ -176,8 +176,8 @@ for epoch in range(opt.nEpochs):
         high_res_real, _ = data
         
         if len(high_res_real) < opt.batchSize:
-            print("high_res_real data not enough")
-            print("data: ", len(high_res_real), "batch_size: ", opt.batchSize)
+#             print("high_res_real data not enough")
+#             print("data: ", len(high_res_real), "batch_size: ", opt.batchSize)
             break;
 
         # Downsample images to low resolution
@@ -225,7 +225,7 @@ for epoch in range(opt.nEpochs):
         optim_generator.step()   
         
         ######### Status and display #########
-        sys.stdout.write('\r[%d/%d][%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f' % (epoch, opt.nEpochs, i, len(dataloader),
+        sys.stdout.write('\r[%d/%d][%d/%d] Discriminator_Loss: %.4f Generator_Loss (Content/Advers/Total): %.4f/%.4f/%.4f\n' % (epoch, opt.nEpochs, i, len(dataloader),
         discriminator_loss.data[0], generator_content_loss.data[0], generator_adversarial_loss.data[0], generator_total_loss.data[0]))
 
         ######### update images saved #########
